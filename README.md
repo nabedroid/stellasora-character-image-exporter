@@ -1,0 +1,1 @@
+# stellasora-character-image-exporter
