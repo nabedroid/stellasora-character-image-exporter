@@ -1,0 +1,10 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: app
+    volumes:
+      - ./src:/app/src
+      - ./output:/output
+      - ${INSTALL_PATH}:/StellaSora_JP:ro
