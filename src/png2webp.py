@@ -19,7 +19,9 @@ def png2webp(png_path: Path, webp_path: Path, max_file_size: int) -> None:
     webp_path.parent.mkdir(parents=True, exist_ok=True)
     
     # RGBA / RGB モードの維持 (必要に応じて変換)
-    if img.mode not in ("RGB", "RGBA"):
+    if "transparency" in img.info:
+      img = img.convert("RGBA")
+    elif img.mode not in ("RGB", "RGBA"):
       img = img.convert("RGBA")
 
     # 無劣化で変換する
@@ -28,7 +30,7 @@ def png2webp(png_path: Path, webp_path: Path, max_file_size: int) -> None:
     # 指定サイズを超えている場合は、品質を 10 ずつ下げて再保存
     quality: int = 90
     while webp_path.stat().st_size > max_file_size and quality > 0:
-      img.save(webp_path, format="WEBP", lossless=False, quality=quality)
+      img.save(webp_path, format="WEBP", lossless=False, quality=quality, method=6)
       quality -= 10
 
     # 最終的に指定サイズを超えている場合はエラー

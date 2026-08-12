@@ -9,10 +9,12 @@
 ```bash
 # 全てのキャラの立ち絵とアイコンを抽出
 python -m src.main
-# 特定のキャラの立ち絵のみを抽出
+# 特定のキャラの立ち絵とフォトメモを抽出
 python -m src.exporters.char_2d_exporter --character-id 103
 # 特定のキャラのアイコンのみを抽出
 python -m src.exporters.icon_exporter --character-id 103
+# 特定のキャラ（NPC込み）の立ち絵（衣装差分込み）を抽出
+python -m src.exporters.char_avg_2d_exporter --character-id 103
 ```
 
 ## webp 変換
