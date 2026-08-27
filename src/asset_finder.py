@@ -44,4 +44,4 @@ def _glob_assets_streaming(glob_filename: str) -> list[Path]:
   return list(_STREAMING_ASSETS_PATH.glob(glob_filename))
 
 def _glob_assets_persistent(glob_filename: str) -> list[Path]:
-  return _PERSISTENT_DATA_PATH.glob(glob_filename)
+  return list(_PERSISTENT_DATA_PATH.glob(glob_filename))

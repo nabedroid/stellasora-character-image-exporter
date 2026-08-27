@@ -25,8 +25,8 @@ def export_icon(output_dir: str, character_id: str = None):
     # アセットバンドルを読み込む
     env = UnityPy.load(str(p))
     for path, obj in env.container.items():
-      # Texture2D 以外はスキップ
-      if obj.type.name != "Texture2D": continue
+      # Sprite 以外はスキップ
+      if obj.type.name != "Sprite": continue
       # アイコンの種類を判定する
       basename = os.path.basename(path)
       if match := re.match(r"head_(\d{3})(\d{2})_xxl\.png", basename):
@@ -40,7 +40,7 @@ def export_icon(output_dir: str, character_id: str = None):
         version = "" if match.group(2) == "01" else f"{int(match.group(2))}"        
         output_path = os.path.join(output_dir, character_name, f"{character_name}_icon{version}.png")
         image_utils.save_image(obj.read().image, output_path)
-      elif match := re.match(r"(\d{3})(\d{2})_(normal.*?|skill_main.*?|skill_support|ultra.*?)\.png", basename):
+      elif match := re.match(r"(\d{3})(\d{2})_(normal|skill_main|skill_support|ultra)\.png", basename):
         # スキルアイコン
 
         # キャラクター指定があったら、スキップ
