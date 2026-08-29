@@ -1,8 +1,15 @@
 from src import asset_finder
 import os
 import sys
-
+import math
 from PIL import Image
+
+# 開発環境のCanvas設計解像度（高さ）とカメラFOVを設定
+CANVAS_HEIGHT = 1080.0
+CAMERA_FOV = 60.0
+
+# 基準距離 D_ref の計算
+D_REF = (CANVAS_HEIGHT / 2.0) / math.tan(math.radians(CAMERA_FOV / 2.0))
 
 def save_image(image: Image.Image, output_path: str):
   """画像をファイルとして保存する（保存先ディレクトリがない場合は自動作成する）
@@ -64,8 +71,13 @@ def composite_body_face(body_sprite: any, face_sprite: any) -> any:
 
   return canvas
 
-
-def _create_image(transform: any, depth: int = 0) -> Image.Image:
+# うまく動作していない。
+# 現状の問題点は下記の通り。
+# - 各Sprite画像がもろもろの補正の結果、横長につぶれている
+# - キャラクター Sprite の配置位置が若干右上にずれてしまっている
+#   - 文字もずれてると思う
+# どの部分で補正をかけるべきか、あるいは補正の仕方が間違っているのか再検討が必要
+def _create_image(transform: any, parent_world_z: int = 0, depth: int = 0) -> Image.Image:
   indent = "  " * depth
   game_object = transform.m_GameObject.read()
   sprite = None
@@ -74,13 +86,16 @@ def _create_image(transform: any, depth: int = 0) -> Image.Image:
   # ジャイロは不要なのでスキップ
   if "Gyroscope" in game_object.m_Name: return None
 
+  current_world_z = parent_world_z + transform.m_LocalPosition.z
+
   print(f"{indent}- {game_object.m_Name}",
         f"Size:({transform.m_SizeDelta.x:.0f},{transform.m_SizeDelta.y:.0f})",
         f"Scale: ({transform.m_LocalScale.x:.1f},{transform.m_LocalScale.y:.1f})",
         f"LPos: ({transform.m_LocalPosition.x:.0f},{transform.m_LocalPosition.y:.0f},{transform.m_LocalPosition.z:.0f})",
         f"APos: ({transform.m_AnchoredPosition.x:.0f},{transform.m_AnchoredPosition.y:.0f})",
-        f"AnchorMin-Max: ({transform.m_AnchorMin.x:.1f},{transform.m_AnchorMin.y:.1f})-({transform.m_AnchorMax.x:.1f},{transform.m_AnchorMax.y:.1f})",
-        f"Pivot: ({transform.m_Pivot.x:.1f},{transform.m_Pivot.y:.1f})",
+        #f"AnchorMin-Max: ({transform.m_AnchorMin.x:.1f},{transform.m_AnchorMin.y:.1f})-({transform.m_AnchorMax.x:.1f},{transform.m_AnchorMax.y:.1f})",
+        #f"Pivot: ({transform.m_Pivot.x:.1f},{transform.m_Pivot.y:.1f})",
+        f"CurrentWorldZ: {current_world_z}",
   )
 
   # GameObject が所持しているスプライト画像を取得
@@ -102,40 +117,75 @@ def _create_image(transform: any, depth: int = 0) -> Image.Image:
   x2, y2 = -sys.maxsize - 1, -sys.maxsize - 1
   for child_ref in transform.m_Children:
     c_transform = child_ref.read()
-    c_image = _create_image(c_transform, depth + 1)
+    c_image = _create_image(c_transform, current_world_z, depth + 1)
     if c_image is not None:
-      sdx = c_image.width if c_transform.m_SizeDelta.x <= 0 else c_transform.m_SizeDelta.x
-      sdy = c_image.height if c_transform.m_SizeDelta.y <= 0 else c_transform.m_SizeDelta.y
-      #resized_w = int(sdx * c_transform.m_LocalScale.x)
-      #resized_h = int(sdy * c_transform.m_LocalScale.y)
-      resized_w = c_image.width
-      resized_h = c_image.height
+      # 1. Z座標によるパース倍率計算
+      c_world_z = current_world_z + c_transform.m_LocalPosition.z
+      persp_ratio = D_REF / (D_REF + c_world_z)
 
-      offx = c_image.width / 2
-      offy = c_image.height / 2
-      x1 = min(x1, -offx - c_transform.m_AnchoredPosition.x)
-      y1 = min(y1, -offy + c_transform.m_AnchoredPosition.y)
-      x2 = max(x2, offx + c_transform.m_AnchoredPosition.x)
-      y2 = max(y2, offy - c_transform.m_AnchoredPosition.y)
-      c_image_resized = c_image.resize((resized_w, resized_h))
-      childs.append([c_transform, c_image_resized])
-  # z軸で降順にソートする
+      # 2. X軸回転 (Quaternion: x, w) から Y方向の投影圧縮率 (cos θ) を算出
+      q_x = c_transform.m_LocalRotation.x
+      q_w = c_transform.m_LocalRotation.w
+      rot_x_rad = 2.0 * math.atan2(q_x, q_w)
+      y_projection_factor = math.cos(rot_x_rad)
+
+      # 3. 描画基準サイズの確定 (m_SizeDelta があれば優先、無ければ元画像サイズ)
+      base_w = (
+        c_transform.m_SizeDelta.x
+        if c_transform.m_SizeDelta.x > 0
+        else c_image.width
+      )
+      base_h = (
+        c_transform.m_SizeDelta.y
+        if c_transform.m_SizeDelta.y > 0
+        else c_image.height
+      )
+
+      # 4. Scale と 投影補正、パース倍率を適用した最終リサイズ幅・高さ
+      scale_x = c_transform.m_LocalScale.x
+      scale_y = c_transform.m_LocalScale.y * y_projection_factor
+
+      resized_w = max(1, int(base_w * scale_x * persp_ratio))
+      resized_h = max(1, int(base_h * scale_y * persp_ratio))
+
+      # 5. パース倍率を適用した中心からの座標オフセット (Unity: Y上向きが正)
+      pos_x = c_transform.m_AnchoredPosition.x * persp_ratio
+      pos_y = c_transform.m_AnchoredPosition.y * persp_ratio
+
+      # 6. バウンディングボックス (最左x1, 最下y1, 最右x2, 最上y2) の更新
+      offx = resized_w / 2.0
+      offy = resized_h / 2.0
+
+      x1 = min(x1, pos_x - offx)  # 最左端
+      x2 = max(x2, pos_x + offx)  # 最右端
+      y1 = min(y1, pos_y - offy)  # 最下端（下半身などマイナス方向）
+      y2 = max(y2, pos_y + offy)  # 最上端
+
+      # 7. 画像リサイズ & 配列追加
+      c_image_resized = c_image.resize(
+        (resized_w, resized_h), Image.Resampling.LANCZOS
+      )
+      childs.append([c_transform, c_image_resized, pos_x, pos_y, c_world_z])
+
+  # 末端の場合はスプライトをそのまま返す
   if len(childs) == 0:
     return sprite.image if sprite else None
 
-  childs.sort(key=lambda x: x[0].m_LocalPosition.z, reverse=True)
-  width = int(x2 - x1)
-  height = int(y2 - y1)
-  cx = width / 2
-  cy = height / 2
+  # z軸で降順にソートする
+  childs.sort(key=lambda x: x[4], reverse=True)
+
+  # 全要素を含むキャンバス幅・高さを算出
+  width = int(math.ceil(x2 - x1))
+  height = int(math.ceil(y2 - y1))
 
   image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-  for child_transform, child_image in childs:
-    # 合成する
-    x = int(cx - child_image.width / 2 + child_transform.m_AnchoredPosition.x)
-    y = int(cy - child_image.height / 2 - child_transform.m_AnchoredPosition.y)
 
-    image.alpha_composite(child_image, (x, y))
+  # 最左上角 (x1, y2) を原点として絶対座標合成
+  for child_transform, child_image, pos_x, pos_y, _ in childs:
+    px = int(round((pos_x - child_image.width / 2.0) - x1))
+    py = int(round(y2 - (pos_y + child_image.height / 2.0)))
+
+    image.alpha_composite(child_image, (px, py))
 
   return image
 
