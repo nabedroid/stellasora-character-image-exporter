@@ -40,8 +40,9 @@ def export_icon(output_dir: str, character_id: str = None):
         version = "" if match.group(2) == "01" else f"{int(match.group(2))}"        
         output_path = os.path.join(output_dir, character_name, f"{character_name}_icon{version}.png")
         image_utils.save_image(obj.read().image, output_path)
-      elif match := re.match(r"(\d{3})(\d{2})_(normal|skill_main|skill_support|ultra)\.png", basename):
+      elif match := re.match(r"(\d{3})(\d{2})_(normal|skill_main|skill_support|ultra|ultra_[a-z])\.png", basename):
         # スキルアイコン
+        # エリーの必殺技のアイコンは ultra_a/b になっている
 
         # キャラクター指定があったら、スキップ
         if character_id and character_id != match.group(1): continue
